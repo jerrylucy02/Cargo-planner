@@ -51,15 +51,27 @@ function rotations(l, w) {
   return l === w ? [[l, w]] : [[l, w], [w, l]];
 }
 
-function fitCountOnPmc(length, width, aircraft) {
+function fitLayoutOnPmc(length, width, aircraft) {
   const L = aircraft.pmcLength;
   const W = aircraft.pmcWidth;
   const rots = rotations(length, width);
-  let best = 0;
+  let best = { count: 0, boxes: [] };
+
+  function setBest(boxes) {
+    if (boxes.length > best.count) best = { count: boxes.length, boxes };
+  }
 
   for (const [l, w] of rots) {
     if (l <= L && w <= W) {
-      best = Math.max(best, Math.floor(L / l) * Math.floor(W / w));
+      const cols = Math.floor(L / l);
+      const rows = Math.floor(W / w);
+      const boxes = [];
+      for (let row = 0; row < rows; row++) {
+        for (let col = 0; col < cols; col++) {
+          boxes.push({ x: col * l, y: row * w, l, w });
+        }
+      }
+      setBest(boxes);
     }
   }
 
@@ -70,10 +82,22 @@ function fitCountOnPmc(length, width, aircraft) {
         const usedWidth = n1 * w1;
         const remWidth = W - usedWidth;
         if (remWidth < 0) continue;
-        const c1 = n1 * Math.floor(L / l1);
         const n2 = Math.floor(remWidth / w2);
-        const c2 = n2 * Math.floor(L / l2);
-        best = Math.max(best, c1 + c2);
+        const count1 = Math.floor(L / l1);
+        const count2 = Math.floor(L / l2);
+        const boxes = [];
+
+        for (let stripe = 0; stripe < n1; stripe++) {
+          for (let i = 0; i < count1; i++) {
+            boxes.push({ x: i * l1, y: stripe * w1, l: l1, w: w1 });
+          }
+        }
+        for (let stripe = 0; stripe < n2; stripe++) {
+          for (let i = 0; i < count2; i++) {
+            boxes.push({ x: i * l2, y: usedWidth + stripe * w2, l: l2, w: w2 });
+          }
+        }
+        setBest(boxes);
       }
     }
   }
@@ -85,15 +109,31 @@ function fitCountOnPmc(length, width, aircraft) {
         const usedLength = n1 * l1;
         const remLength = L - usedLength;
         if (remLength < 0) continue;
-        const c1 = n1 * Math.floor(W / w1);
         const n2 = Math.floor(remLength / l2);
-        const c2 = n2 * Math.floor(W / w2);
-        best = Math.max(best, c1 + c2);
+        const count1 = Math.floor(W / w1);
+        const count2 = Math.floor(W / w2);
+        const boxes = [];
+
+        for (let stripe = 0; stripe < n1; stripe++) {
+          for (let i = 0; i < count1; i++) {
+            boxes.push({ x: stripe * l1, y: i * w1, l: l1, w: w1 });
+          }
+        }
+        for (let stripe = 0; stripe < n2; stripe++) {
+          for (let i = 0; i < count2; i++) {
+            boxes.push({ x: usedLength + stripe * l2, y: i * w2, l: l2, w: w2 });
+          }
+        }
+        setBest(boxes);
       }
     }
   }
 
   return best;
+}
+
+function fitCountOnPmc(length, width, aircraft) {
+  return fitLayoutOnPmc(length, width, aircraft).count;
 }
 
 function classifyRow(row, aircraft) {
@@ -516,77 +556,87 @@ export default function App() {
           </>
         )}
 
-        {aircraft.mode === "LOWER_SINGLE_ONLY" && (
-          <SectionCard title="Single Lower Deck PMC Check">
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
-              <div>
-                <div style={{
-                  width: 320,
-                  maxWidth: "100%",
-                  aspectRatio: "317.5 / 243.8",
-                  border: "2px solid #64748b",
-                  borderRadius: 16,
-                  background: "#f8fafc",
-                  position: "relative",
-                  overflow: "hidden"
-                }}>
-                  {rows[0] && (() => {
-                    const row = rows[0];
-                    const scaleX = 100 / aircraft.pmcLength;
-                    const scaleY = 100 / aircraft.pmcWidth;
-                    const wPct = Math.min(100, row.length * scaleX);
-                    const hPct = Math.min(100, row.width * scaleY);
-                    return (
-                      <div
-                        style={{
-                          position: "absolute",
-                          left: "50%",
-                          top: "50%",
-                          width: `${wPct}%`,
-                          height: `${hPct}%`,
-                          transform: "translate(-50%, -50%)",
-                          background: result.details[0]?.lowerPossible ? "rgba(167,139,250,0.45)" : "rgba(248,113,113,0.45)",
-                          border: `2px solid ${result.details[0]?.lowerPossible ? "#7c3aed" : "#dc2626"}`,
-                          borderRadius: 12,
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          textAlign: "center",
-                          fontSize: 12,
-                          fontWeight: 700,
-                          color: "#0f172a",
-                          padding: 6,
-                          boxSizing: "border-box"
-                        }}
-                      >
-                        {row.length} × {row.width}
-                      </div>
-                    );
-                  })()}
-                  <div style={{ position: "absolute", left: 10, top: 8, fontSize: 12, color: "#475569", fontWeight: 700 }}>PMC 317.5 × 243.8</div>
+        {aircraft.mode === "LOWER_SINGLE_ONLY" && (() => {
+          const row = rows[0];
+          const layout = row ? fitLayoutOnPmc(row.length, row.width, aircraft) : { count: 0, boxes: [] };
+          const firstItem = result.details[0];
+          const boxesToShow = layout.boxes.slice(0, Math.min(layout.boxes.length, row ? row.qty : 0));
+          const layers = row && row.stackable && row.height * 2 <= aircraft.lowerMaxHeight ? 2 : 1;
+          return (
+            <SectionCard title="Single Lower Deck PMC Check">
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+                <div>
+                  <div style={{
+                    width: 360,
+                    maxWidth: "100%",
+                    aspectRatio: `${aircraft.pmcLength} / ${aircraft.pmcWidth}`,
+                    border: "2px solid #64748b",
+                    borderRadius: 16,
+                    background: "#f8fafc",
+                    position: "relative",
+                    overflow: "hidden"
+                  }}>
+                    <div style={{ position: "absolute", left: 10, top: 8, fontSize: 12, color: "#475569", fontWeight: 700 }}>
+                      PMC {aircraft.pmcLength} × {aircraft.pmcWidth}
+                    </div>
+                    {boxesToShow.map((box, idx) => {
+                      const left = (box.x / aircraft.pmcLength) * 100;
+                      const top = (box.y / aircraft.pmcWidth) * 100;
+                      const width = (box.l / aircraft.pmcLength) * 100;
+                      const height = (box.w / aircraft.pmcWidth) * 100;
+                      return (
+                        <div
+                          key={idx}
+                          style={{
+                            position: "absolute",
+                            left: `${left}%`,
+                            top: `${top}%`,
+                            width: `${width}%`,
+                            height: `${height}%`,
+                            background: firstItem?.lowerPossible ? "rgba(167,139,250,0.45)" : "rgba(248,113,113,0.45)",
+                            border: `2px solid ${firstItem?.lowerPossible ? "#7c3aed" : "#dc2626"}`,
+                            borderRadius: 10,
+                            display: "flex",
+                            alignItems: "center",
+                            justifyContent: "center",
+                            textAlign: "center",
+                            fontSize: 11,
+                            fontWeight: 700,
+                            color: "#0f172a",
+                            boxSizing: "border-box"
+                          }}
+                        >
+                          {idx + 1}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(1, minmax(0, 220px))", gap: 12 }}>
+                    <div style={cellStyle(result.usedLower > 0 ? "#ddd6fe" : "#ecfdf5")}>Lower Deck PMC 1</div>
+                  </div>
+                  <div style={{ marginTop: 14, fontSize: 14, color: "#475569", display: "grid", gap: 8 }}>
+                    <div>Items shown on layer: {boxesToShow.length}</div>
+                    <div>Possible per layer: {layout.count}</div>
+                    <div>Layers used: {layers}</div>
+                    <div>Max height: {aircraft.lowerMaxHeight} cm</div>
+                    <div>Max weight: {aircraft.maxWeight} kg</div>
+                    {firstItem && firstItem.heightOk === false && (
+                      <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: height exceeds limit.</div>
+                    )}
+                    {firstItem && firstItem.weightOk === false && (
+                      <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: weight exceeds limit.</div>
+                    )}
+                    {firstItem && firstItem.lowerPossible && (
+                      <div style={{ color: "#166534", fontWeight: 700 }}>Fits into the single lower deck PMC.</div>
+                    )}
+                  </div>
                 </div>
               </div>
-              <div>
-                <div style={{ display: "grid", gridTemplateColumns: "repeat(1, minmax(0, 220px))", gap: 12 }}>
-                  <div style={cellStyle(result.usedLower > 0 ? "#ddd6fe" : "#ecfdf5")}>Lower Deck PMC 1</div>
-                </div>
-                <div style={{ marginTop: 14, fontSize: 14, color: "#475569", display: "grid", gap: 8 }}>
-                  <div>Max height: 160 cm</div>
-                  <div>Max weight: {aircraft.maxWeight} kg</div>
-                  {result.details[0] && result.details[0].heightOk === false && (
-                    <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: height exceeds limit.</div>
-                  )}
-                  {result.details[0] && result.details[0].weightOk === false && (
-                    <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: weight exceeds limit.</div>
-                  )}
-                  {result.details[0] && result.details[0].lowerPossible && (
-                    <div style={{ color: "#166534", fontWeight: 700 }}>Fits into the single lower deck PMC.</div>
-                  )}
-                </div>
-              </div>
-            </div>
-          </SectionCard>
-        )}
+            </SectionCard>
+          );
+        })()}
       </div>
     </div>
   );
