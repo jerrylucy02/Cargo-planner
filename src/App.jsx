@@ -221,6 +221,70 @@ function classifyRow(row, aircraft) {
 }
 
 function allocateRows(rows, aircraft) {
+  if (aircraft.mode === "LOWER_SINGLE_ONLY") {
+    const totalQty = rows.reduce((sum, r) => sum + (Number(r.qty) || 0), 0);
+    const totalWeight = rows.reduce((sum, r) => sum + ((Number(r.qty) || 0) * (Number(r.weight) || 0)), 0);
+    const baseRow = rows[0] || { qty: 0, length: 0, width: 0, height: 0, weight: 0, stackable: false, description: "No cargo" };
+
+    const perLayer = fitCountOnPmc(baseRow.length, baseRow.width, aircraft);
+    const layers = baseRow.stackable && baseRow.height * 2 <= aircraft.lowerMaxHeight ? 2 : 1;
+    const capacity = perLayer * layers;
+    const heightOk = baseRow.height <= aircraft.lowerMaxHeight && (!baseRow.stackable || baseRow.height * layers <= aircraft.lowerMaxHeight);
+    const weightOk = totalWeight <= aircraft.maxWeight;
+    const lowerPossible = perLayer > 0 && heightOk && weightOk;
+    const usedLower = lowerPossible && totalQty > 0 ? 1 : 0;
+    const unallocated = lowerPossible ? Math.max(0, totalQty - capacity) : totalQty;
+
+    const aggregateDetail = {
+      row: {
+        id: "single-lower-aggregate",
+        qty: totalQty,
+        length: baseRow.length,
+        width: baseRow.width,
+        height: baseRow.height,
+        weight: baseRow.weight,
+        stackable: baseRow.stackable,
+        description: rows.length > 1 ? `Combined cargo (${rows.length} lines)` : baseRow.description,
+      },
+      type: "LOWER_SINGLE_ONLY",
+      positions: totalQty > 0 ? 1 : 0,
+      perPositionMain: 0,
+      perPositionLower: capacity,
+      lowerPossible,
+      heightOk,
+      weightOk,
+      notes: perLayer <= 0
+        ? "Footprint does not fit on single Lower Deck PMC"
+        : !heightOk
+          ? `Too high (${baseRow.height} cm, stack ${layers} layer)`
+          : !weightOk
+            ? `Too heavy (${totalWeight} kg > ${aircraft.maxWeight} kg)`
+            : `${perLayer}/layer, ${layers} layer(s), fill layer 1 before layer 2`,
+      allocation: { q7: 0, q6: 0, t: 0, lower: usedLower },
+      totalWeight,
+      unallocatedQty: unallocated,
+      previewQty: totalQty,
+      previewPerLayer: perLayer,
+      previewLayers: layers,
+    };
+
+    return {
+      details: [aggregateDetail],
+      totalWeight,
+      usedQ7: 0,
+      usedQ6: 0,
+      usedT: 0,
+      usedLower,
+      freeQ7: 0,
+      freeQ6: 0,
+      freeT: 0,
+      freeLower: aircraft.lowerPmc - usedLower,
+      freeLd3: 0,
+      fits: lowerPossible && unallocated === 0,
+      unallocated,
+    };
+  }
+
   const details = rows.map((row) => ({
     row,
     ...classifyRow(row, aircraft),
@@ -236,35 +300,6 @@ function allocateRows(rows, aircraft) {
   let totalWeight = 0;
 
   for (const item of details) totalWeight += item.totalWeight;
-
-  if (aircraft.mode === "LOWER_SINGLE_ONLY") {
-    for (const item of details) {
-      const use = item.lowerPossible ? Math.min(item.positions, freeLower) : 0;
-      item.allocation.lower = use;
-      freeLower -= use;
-      const perLower = item.perPositionLower || 1;
-      item.unallocatedQty = item.lowerPossible ? Math.max(0, item.row.qty - use * perLower) : item.row.qty;
-    }
-
-    const usedLower = aircraft.lowerPmc - freeLower;
-    const unallocated = details.reduce((sum, d) => sum + (d.unallocatedQty || 0), 0);
-
-    return {
-      details,
-      totalWeight,
-      usedQ7: 0,
-      usedQ6: 0,
-      usedT: 0,
-      usedLower,
-      freeQ7: 0,
-      freeQ6: 0,
-      freeT: 0,
-      freeLower,
-      freeLd3: 0,
-      fits: unallocated === 0 && freeLower >= 0,
-      unallocated,
-    };
-  }
 
   for (const item of details.filter((d) => d.type === "T")) {
     const use = Math.min(item.positions, freeT);
@@ -362,10 +397,16 @@ function SectionCard({ title, children, right }) {
 }
 
 function LowerSinglePreview({ row, result, aircraft }) {
-  const layout = row ? fitLayoutOnPmc(row.length, row.width, aircraft) : { count: 0, boxes: [] };
   const firstItem = result.details[0];
-  const boxesToShow = layout.boxes.slice(0, Math.min(layout.boxes.length, row ? row.qty : 0));
-  const layers = row && row.stackable && row.height * 2 <= aircraft.lowerMaxHeight ? 2 : 1;
+  const previewRow = firstItem?.row || row;
+  const layout = previewRow ? fitLayoutOnPmc(previewRow.length, previewRow.width, aircraft) : { count: 0, boxes: [] };
+  const totalQty = firstItem?.previewQty ?? (previewRow?.qty || 0);
+  const perLayer = firstItem?.previewPerLayer ?? layout.count;
+  const layers = firstItem?.previewLayers ?? 1;
+  const layer1Count = Math.min(totalQty, perLayer);
+  const layer2Count = Math.max(0, Math.min(totalQty - layer1Count, perLayer));
+  const layer1Boxes = layout.boxes.slice(0, layer1Count);
+  const layer2Boxes = layout.boxes.slice(0, layer2Count);
 
   const renderCube = (box, idx, layerIndex) => {
     const offsetX = 22;
@@ -461,8 +502,8 @@ function LowerSinglePreview({ row, result, aircraft }) {
             <div style={{ position: "absolute", left: 28, bottom: 186, fontSize: 12, color: "#475569", fontWeight: 700 }}>
               PMC {aircraft.pmcLength} × {aircraft.pmcWidth}
             </div>
-            {boxesToShow.map((box, idx) => renderCube(box, idx, 1))}
-            {layers > 1 && boxesToShow.map((box, idx) => renderCube(box, idx, 2))}
+            {layer1Boxes.map((box, idx) => renderCube(box, idx, 1))}
+            {layers > 1 && layer2Boxes.map((box, idx) => renderCube(box, idx, 2))}
           </div>
         </div>
         <div>
@@ -470,13 +511,15 @@ function LowerSinglePreview({ row, result, aircraft }) {
             <div style={cellStyle(result.usedLower > 0 ? "#ddd6fe" : "#ecfdf5")}>Lower Deck PMC 1</div>
           </div>
           <div style={{ marginTop: 18, display: "grid", gap: 8, fontSize: 14, color: "#475569" }}>
-            <div>Items shown on layer: {boxesToShow.length}</div>
-            <div>3D boxes shown: {boxesToShow.length * layers}</div>
-            <div>Possible per layer: {layout.count}</div>
+            <div>Items on layer 1: {layer1Count}</div>
+            <div>Items on layer 2: {layer2Count}</div>
+            <div>3D boxes shown: {layer1Count + layer2Count}</div>
+            <div>Possible per layer: {perLayer}</div>
             <div>Layers used: {layers}</div>
-            <div>Total possible with current stacking: {layout.count * layers}</div>
+            <div>Total possible with current stacking: {perLayer * layers}</div>
             <div>Max height: {aircraft.lowerMaxHeight} cm</div>
             <div>Max weight: {aircraft.maxWeight} kg</div>
+            {firstItem && !previewRow.stackable && <div>Second layer only activates when Stackable is checked.</div>}
             {firstItem && firstItem.heightOk === false && (
               <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: height exceeds limit.</div>
             )}
