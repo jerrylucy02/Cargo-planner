@@ -31,6 +31,7 @@ const AIRCRAFTS = {
     pmcWidth: 243.8,
     tLength: 0,
     tWidth: 0,
+    maxWeight: 4500,
     mode: "LOWER_SINGLE_ONLY",
   },
 };
@@ -100,6 +101,8 @@ function classifyRow(row, aircraft) {
 
   if (aircraft.mode === "LOWER_SINGLE_ONLY") {
     const perLayer = fitCountOnPmc(l, w, aircraft);
+    const totalRowWeight = qty * row.weight;
+
     if (perLayer <= 0) {
       return {
         type: "LOWER_SINGLE_ONLY",
@@ -107,12 +110,16 @@ function classifyRow(row, aircraft) {
         perPositionMain: 0,
         perPositionLower: 0,
         lowerPossible: false,
+        heightOk: h <= aircraft.lowerMaxHeight,
+        weightOk: totalRowWeight <= aircraft.maxWeight,
         notes: "Footprint does not fit on single Lower Deck PMC",
       };
     }
 
     const layers = stackable && h * 2 <= aircraft.lowerMaxHeight ? 2 : 1;
-    const lowerPossible = h <= aircraft.lowerMaxHeight;
+    const heightOk = h <= aircraft.lowerMaxHeight;
+    const weightOk = totalRowWeight <= aircraft.maxWeight;
+    const lowerPossible = heightOk && weightOk;
     const perPositionLower = perLayer * layers;
 
     return {
@@ -121,9 +128,13 @@ function classifyRow(row, aircraft) {
       perPositionMain: 0,
       perPositionLower,
       lowerPossible,
-      notes: lowerPossible
-        ? `${perLayer}/layer, ${layers} layer(s), single lower deck check`
-        : "Too high for single Lower Deck PMC",
+      heightOk,
+      weightOk,
+      notes: !heightOk
+        ? `Too high (${h} cm > ${aircraft.lowerMaxHeight} cm)`
+        : !weightOk
+          ? `Too heavy (${totalRowWeight} kg > ${aircraft.maxWeight} kg)`
+          : `${perLayer}/layer, ${layers} layer(s), single lower deck check`,
     };
   }
 
@@ -457,7 +468,7 @@ export default function App() {
             <SectionCard title="Calculated Rows">
               <div style={{ display: "grid", gap: 10, maxHeight: 500, overflow: "auto" }}>
                 {result.details.map((item) => (
-                  <div key={item.row.id} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 12 }}>
+                  <div key={item.row.id} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 12, background: item.unallocatedQty > 0 || item.lowerPossible === false ? "#fff7f7" : "white" }}>
                     <div style={{ fontWeight: 700 }}>{item.row.description}</div>
                     <div style={{ fontSize: 13, color: "#475569", marginTop: 4 }}>
                       {item.row.qty} pcs · {item.row.length}×{item.row.width}×{item.row.height} cm · {item.row.weight} kg/pc
@@ -469,7 +480,9 @@ export default function App() {
                       {item.allocation.q7 > 0 && <span style={{ padding: "6px 10px", background: "#dbeafe", borderRadius: 999 }}>Q7 {item.allocation.q7}</span>}
                       {item.allocation.t > 0 && <span style={{ padding: "6px 10px", background: "#fecaca", borderRadius: 999 }}>T {item.allocation.t}</span>}
                       {item.allocation.lower > 0 && <span style={{ padding: "6px 10px", background: "#ede9fe", borderRadius: 999 }}>Lower {item.allocation.lower}</span>}
-                      {item.unallocatedQty > 0 && <span style={{ padding: "6px 10px", background: "#fee2e2", borderRadius: 999 }}>Open {item.unallocatedQty}</span>}
+                      {item.unallocatedQty > 0 && <span style={{ padding: "6px 10px", background: "#fee2e2", borderRadius: 999, color: "#991b1b", fontWeight: 700 }}>Open {item.unallocatedQty}</span>}
+                      {item.heightOk === false && <span style={{ padding: "6px 10px", background: "#fee2e2", borderRadius: 999, color: "#991b1b", fontWeight: 700 }}>Height warning</span>}
+                      {item.weightOk === false && <span style={{ padding: "6px 10px", background: "#fee2e2", borderRadius: 999, color: "#991b1b", fontWeight: 700 }}>Weight warning</span>}
                     </div>
                   </div>
                 ))}
@@ -505,11 +518,72 @@ export default function App() {
 
         {aircraft.mode === "LOWER_SINGLE_ONLY" && (
           <SectionCard title="Single Lower Deck PMC Check">
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(1, minmax(0, 220px))", gap: 12 }}>
-              <div style={cellStyle(result.usedLower > 0 ? "#ddd6fe" : "#ecfdf5")}>Lower Deck PMC 1</div>
-            </div>
-            <div style={{ marginTop: 14, fontSize: 14, color: "#475569" }}>
-              Max height: 160 cm · one lower deck PMC only.
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
+              <div>
+                <div style={{
+                  width: 320,
+                  maxWidth: "100%",
+                  aspectRatio: "317.5 / 243.8",
+                  border: "2px solid #64748b",
+                  borderRadius: 16,
+                  background: "#f8fafc",
+                  position: "relative",
+                  overflow: "hidden"
+                }}>
+                  {rows[0] && (() => {
+                    const row = rows[0];
+                    const scaleX = 100 / aircraft.pmcLength;
+                    const scaleY = 100 / aircraft.pmcWidth;
+                    const wPct = Math.min(100, row.length * scaleX);
+                    const hPct = Math.min(100, row.width * scaleY);
+                    return (
+                      <div
+                        style={{
+                          position: "absolute",
+                          left: "50%",
+                          top: "50%",
+                          width: `${wPct}%`,
+                          height: `${hPct}%`,
+                          transform: "translate(-50%, -50%)",
+                          background: result.details[0]?.lowerPossible ? "rgba(167,139,250,0.45)" : "rgba(248,113,113,0.45)",
+                          border: `2px solid ${result.details[0]?.lowerPossible ? "#7c3aed" : "#dc2626"}`,
+                          borderRadius: 12,
+                          display: "flex",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          textAlign: "center",
+                          fontSize: 12,
+                          fontWeight: 700,
+                          color: "#0f172a",
+                          padding: 6,
+                          boxSizing: "border-box"
+                        }}
+                      >
+                        {row.length} × {row.width}
+                      </div>
+                    );
+                  })()}
+                  <div style={{ position: "absolute", left: 10, top: 8, fontSize: 12, color: "#475569", fontWeight: 700 }}>PMC 317.5 × 243.8</div>
+                </div>
+              </div>
+              <div>
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(1, minmax(0, 220px))", gap: 12 }}>
+                  <div style={cellStyle(result.usedLower > 0 ? "#ddd6fe" : "#ecfdf5")}>Lower Deck PMC 1</div>
+                </div>
+                <div style={{ marginTop: 14, fontSize: 14, color: "#475569", display: "grid", gap: 8 }}>
+                  <div>Max height: 160 cm</div>
+                  <div>Max weight: {aircraft.maxWeight} kg</div>
+                  {result.details[0] && result.details[0].heightOk === false && (
+                    <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: height exceeds limit.</div>
+                  )}
+                  {result.details[0] && result.details[0].weightOk === false && (
+                    <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: weight exceeds limit.</div>
+                  )}
+                  {result.details[0] && result.details[0].lowerPossible && (
+                    <div style={{ color: "#166534", fontWeight: 700 }}>Fits into the single lower deck PMC.</div>
+                  )}
+                </div>
+              </div>
             </div>
           </SectionCard>
         )}
