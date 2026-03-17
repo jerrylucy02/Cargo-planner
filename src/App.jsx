@@ -19,14 +19,15 @@ const AIRCRAFTS = {
 };
 
 const sampleRows = [
-  { id: 1, qty: 8, length: 147, width: 115, height: 225, weight: 652.5, stackable: false, description: "Set 1 High" },
-  { id: 2, qty: 2, length: 250, width: 110, height: 145, weight: 927.5, stackable: false, description: "Set 1 Low" },
-  { id: 3, qty: 8, length: 147, width: 115, height: 225, weight: 666.25, stackable: false, description: "Set 2 High" },
-  { id: 4, qty: 2, length: 250, width: 110, height: 145, weight: 935, stackable: false, description: "Set 2 Low" },
-  { id: 5, qty: 10, length: 253, width: 143, height: 225, weight: 2200, stackable: false, description: "Crates" },
-  { id: 6, qty: 1, length: 502, width: 189.5, height: 195.5, weight: 1865, stackable: false, description: "Car 1" },
-  { id: 7, qty: 1, length: 502.2, width: 201.5, height: 207, weight: 2235, stackable: false, description: "Car 2" },
-  { id: 8, qty: 24, length: 120, width: 80, height: 85, weight: 650, stackable: true, description: "EUR Pallets" },
+  { id: 100, qty: 1, length: 120, width: 80, height: 150, weight: 500, stackable: false, description: "Single Lower Deck PMC", loadMode: "LOWER_SINGLE" },
+  { id: 1, qty: 8, length: 147, width: 115, height: 225, weight: 652.5, stackable: false, description: "Set 1 High", loadMode: "AUTO" },
+  { id: 2, qty: 2, length: 250, width: 110, height: 145, weight: 927.5, stackable: false, description: "Set 1 Low", loadMode: "AUTO" },
+  { id: 3, qty: 8, length: 147, width: 115, height: 225, weight: 666.25, stackable: false, description: "Set 2 High", loadMode: "AUTO" },
+  { id: 4, qty: 2, length: 250, width: 110, height: 145, weight: 935, stackable: false, description: "Set 2 Low", loadMode: "AUTO" },
+  { id: 5, qty: 10, length: 253, width: 143, height: 225, weight: 2200, stackable: false, description: "Crates", loadMode: "AUTO" },
+  { id: 6, qty: 1, length: 502, width: 189.5, height: 195.5, weight: 1865, stackable: false, description: "Car 1", loadMode: "AUTO" },
+  { id: 7, qty: 1, length: 502.2, width: 201.5, height: 207, weight: 2235, stackable: false, description: "Car 2", loadMode: "AUTO" },
+  { id: 8, qty: 24, length: 120, width: 80, height: 85, weight: 650, stackable: true, description: "EUR Pallets", loadMode: "AUTO" },
 ];
 
 function rotations(l, w) {
@@ -79,7 +80,20 @@ function fitCountOnPmc(length, width, aircraft) {
 }
 
 function classifyRow(row, aircraft) {
-  const { qty, length: l, width: w, height: h, stackable } = row;
+  const { qty, length: l, width: w, height: h, stackable, loadMode = "AUTO" } = row;
+
+  if (loadMode === "LOWER_SINGLE") {
+    const lowerHeightLimit = 160;
+    const lowerPossible = h <= lowerHeightLimit;
+    return {
+      type: "LOWER_SINGLE",
+      positions: qty,
+      perPositionMain: 1,
+      perPositionLower: 1,
+      lowerPossible,
+      notes: lowerPossible ? "Single Lower Deck PMC (max 160 cm)" : "Too high for Single Lower Deck PMC",
+    };
+  }
 
   if (l > 400 || w > aircraft.pmcWidth) {
     const tNeeded = l <= aircraft.tLength && w <= aircraft.tWidth ? 1 : Math.ceil(l / aircraft.tLength);
@@ -141,6 +155,14 @@ function allocateRows(rows, aircraft) {
   let totalWeight = 0;
 
   for (const item of details) totalWeight += item.totalWeight;
+
+  // Forced single lower deck PMC first
+  for (const item of details.filter((d) => d.type === "LOWER_SINGLE")) {
+    const use = item.lowerPossible ? Math.min(item.positions, freeLower) : 0;
+    item.allocation.lower = use;
+    freeLower -= use;
+    item.unallocatedQty = item.lowerPossible ? Math.max(0, item.row.qty - use) : item.row.qty;
+  }
 
   // T first
   for (const item of details.filter((d) => d.type === "T")) {
@@ -260,7 +282,7 @@ export default function App() {
   function addRow() {
     setRows((prev) => [
       ...prev,
-      { id: Date.now(), qty: 1, length: 120, width: 80, height: 80, weight: 100, stackable: false, description: "New Cargo" },
+      { id: Date.now(), qty: 1, length: 120, width: 80, height: 80, weight: 100, stackable: false, description: "New Cargo", loadMode: "AUTO" },
     ]);
   }
 
@@ -320,7 +342,7 @@ export default function App() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "#f1f5f9" }}>
-                    {["Qty", "L", "W", "H", "KG", "Stackable", "Description", ""].map((h) => (
+                    {["Qty", "L", "W", "H", "KG", "Stackable", "Mode", "Description", ""].map((h) => (
                       <th key={h} style={{ textAlign: "left", padding: 10, fontSize: 13, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
                     ))}
                   </tr>
@@ -346,6 +368,16 @@ export default function App() {
                       ))}
                       <td style={{ padding: 8, borderBottom: "1px solid #f1f5f9" }}>
                         <input type="checkbox" checked={row.stackable} onChange={(e) => updateRow(row.id, "stackable", e.target.checked)} />
+                      </td>
+                      <td style={{ padding: 8, borderBottom: "1px solid #f1f5f9" }}>
+                        <select
+                          value={row.loadMode || "AUTO"}
+                          onChange={(e) => updateRow(row.id, "loadMode", e.target.value)}
+                          style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #cbd5e1" }}
+                        >
+                          <option value="AUTO">Auto</option>
+                          <option value="LOWER_SINGLE">Single Lower Deck PMC (max 160 cm)</option>
+                        </select>
                       </td>
                       <td style={{ padding: 8, borderBottom: "1px solid #f1f5f9" }}>
                         <input
@@ -387,7 +419,7 @@ export default function App() {
                   <div key={item.row.id} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 12 }}>
                     <div style={{ fontWeight: 700 }}>{item.row.description}</div>
                     <div style={{ fontSize: 13, color: "#475569", marginTop: 4 }}>
-                      {item.row.qty} pcs · {item.row.length}×{item.row.width}×{item.row.height} cm · {item.row.weight} kg/pc
+                      {item.row.qty} pcs · {item.row.length}×{item.row.width}×{item.row.height} cm · {item.row.weight} kg/pc · mode: {item.row.loadMode || "AUTO"}
                     </div>
                     <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
                       <span style={{ padding: "6px 10px", background: "#eff6ff", borderRadius: 999 }}>{item.type}</span>
