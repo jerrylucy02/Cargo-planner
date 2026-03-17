@@ -616,10 +616,120 @@ export default function App() {
                   <div style={{ display: "grid", gridTemplateColumns: "repeat(1, minmax(0, 220px))", gap: 12 }}>
                     <div style={cellStyle(result.usedLower > 0 ? "#ddd6fe" : "#ecfdf5")}>Lower Deck PMC 1</div>
                   </div>
-                  <div style={{ marginTop: 14, fontSize: 14, color: "#475569", display: "grid", gap: 8 }}>
+                  <div style={{ marginTop: 18, display: "grid", gap: 18 }}>
+                    {row && (
+                      <div>
+                        <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: "#334155" }}>3D stack preview</div>
+                        <div style={{ position: "relative", width: 420, maxWidth: "100%", height: layers > 1 ? 330 : 250 }}>
+                          {boxesToShow.map((box, idx) => {
+                            const scale = 0.9;
+                            const offsetX = 24;
+                            const offsetY = 18;
+                            const baseLeft = (box.x / aircraft.pmcLength) * 320;
+                            const baseTop = (box.y / aircraft.pmcWidth) * 150 + 70;
+                            const baseWidth = (box.l / aircraft.pmcLength) * 320;
+                            const baseHeight = (box.w / aircraft.pmcWidth) * 150;
+
+                            const renderCube = (layerIndex) => {
+                              const lift = layerIndex === 2 ? -55 : 0;
+                              const left = baseLeft + (layerIndex === 2 ? offsetX : 0);
+                              const top = baseTop + lift - (layerIndex === 2 ? offsetY : 0);
+                              const frontColor = firstItem?.lowerPossible
+                                ? layerIndex === 1 ? "#c4b5fd" : "#93c5fd"
+                                : "#fca5a5";
+                              const sideColor = firstItem?.lowerPossible
+                                ? layerIndex === 1 ? "#a78bfa" : "#60a5fa"
+                                : "#f87171";
+                              const topColor = firstItem?.lowerPossible
+                                ? layerIndex === 1 ? "#ddd6fe" : "#bfdbfe"
+                                : "#fecaca";
+
+                              return (
+                                <div key={`cube-${layerIndex}-${idx}`} style={{ position: "absolute", left, top, width: baseWidth, height: baseHeight }}>
+                                  <div style={{
+                                    position: "absolute",
+                                    left: 0,
+                                    top: 0,
+                                    width: "100%",
+                                    height: "100%",
+                                    background: frontColor,
+                                    border: `2px solid ${firstItem?.lowerPossible ? (layerIndex === 1 ? "#7c3aed" : "#2563eb") : "#dc2626"}`,
+                                    borderRadius: 8,
+                                    boxSizing: "border-box",
+                                    display: "flex",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                    fontSize: 10,
+                                    fontWeight: 700,
+                                    color: "#0f172a",
+                                    boxShadow: "0 6px 10px rgba(15,23,42,0.10)"
+                                  }}>
+                                    {idx + 1}
+                                  </div>
+                                  <div style={{
+                                    position: "absolute",
+                                    left: 8,
+                                    top: -8,
+                                    width: "100%",
+                                    height: 12,
+                                    background: topColor,
+                                    border: `2px solid ${firstItem?.lowerPossible ? (layerIndex === 1 ? "#7c3aed" : "#2563eb") : "#dc2626"}`,
+                                    borderBottom: "none",
+                                    transform: "skewX(-45deg)",
+                                    transformOrigin: "left bottom",
+                                    borderTopLeftRadius: 4,
+                                    borderTopRightRadius: 4,
+                                    boxSizing: "border-box"
+                                  }} />
+                                  <div style={{
+                                    position: "absolute",
+                                    right: -8,
+                                    top: -4,
+                                    width: 12,
+                                    height: "100%",
+                                    background: sideColor,
+                                    border: `2px solid ${firstItem?.lowerPossible ? (layerIndex === 1 ? "#7c3aed" : "#2563eb") : "#dc2626"}`,
+                                    borderLeft: "none",
+                                    transform: "skewY(-45deg)",
+                                    transformOrigin: "left top",
+                                    borderTopRightRadius: 4,
+                                    borderBottomRightRadius: 4,
+                                    boxSizing: "border-box"
+                                  }} />
+                                </div>
+                              );
+                            };
+
+                            return (
+                              <React.Fragment key={`stack-${idx}`}>
+                                {renderCube(1)}
+                                {layers > 1 && renderCube(2)}
+                              </React.Fragment>
+                            );
+                          })}
+                          <div style={{
+                            position: "absolute",
+                            left: 20,
+                            bottom: 10,
+                            width: 340,
+                            height: 170,
+                            border: "2px dashed #94a3b8",
+                            borderRadius: 16,
+                            background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)",
+                            zIndex: -1
+                          }} />
+                          <div style={{ position: "absolute", left: 28, bottom: 186, fontSize: 12, color: "#475569", fontWeight: 700 }}>
+                            PMC {aircraft.pmcLength} × {aircraft.pmcWidth}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                    <div style={{ fontSize: 14, color: "#475569", display: "grid", gap: 8 }}>
                     <div>Items shown on layer: {boxesToShow.length}</div>
+                    <div>3D boxes shown: {boxesToShow.length * layers}</div>
                     <div>Possible per layer: {layout.count}</div>
                     <div>Layers used: {layers}</div>
+                    <div>Total possible with current stacking: {layout.count * layers}</div>
                     <div>Max height: {aircraft.lowerMaxHeight} cm</div>
                     <div>Max weight: {aircraft.maxWeight} kg</div>
                     {firstItem && firstItem.heightOk === false && (
