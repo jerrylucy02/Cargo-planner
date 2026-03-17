@@ -15,19 +15,35 @@ const AIRCRAFTS = {
     pmcWidth: 243.8,
     tLength: 605,
     tWidth: 243.8,
+    mode: "FULL",
+  },
+  "Single Lower Deck PMC (160 cm max)": {
+    name: "Single Lower Deck PMC (160 cm max)",
+    q7: 0,
+    q6: 0,
+    t: 0,
+    lowerPmc: 1,
+    ld3: 0,
+    lowerMaxHeight: 160,
+    q6MaxHeight: 160,
+    q7MaxHeight: 160,
+    pmcLength: 317.5,
+    pmcWidth: 243.8,
+    tLength: 0,
+    tWidth: 0,
+    mode: "LOWER_SINGLE_ONLY",
   },
 };
 
 const sampleRows = [
-  { id: 100, qty: 1, length: 120, width: 80, height: 150, weight: 500, stackable: false, description: "Single Lower Deck PMC", loadMode: "LOWER_SINGLE" },
-  { id: 1, qty: 8, length: 147, width: 115, height: 225, weight: 652.5, stackable: false, description: "Set 1 High", loadMode: "AUTO" },
-  { id: 2, qty: 2, length: 250, width: 110, height: 145, weight: 927.5, stackable: false, description: "Set 1 Low", loadMode: "AUTO" },
-  { id: 3, qty: 8, length: 147, width: 115, height: 225, weight: 666.25, stackable: false, description: "Set 2 High", loadMode: "AUTO" },
-  { id: 4, qty: 2, length: 250, width: 110, height: 145, weight: 935, stackable: false, description: "Set 2 Low", loadMode: "AUTO" },
-  { id: 5, qty: 10, length: 253, width: 143, height: 225, weight: 2200, stackable: false, description: "Crates", loadMode: "AUTO" },
-  { id: 6, qty: 1, length: 502, width: 189.5, height: 195.5, weight: 1865, stackable: false, description: "Car 1", loadMode: "AUTO" },
-  { id: 7, qty: 1, length: 502.2, width: 201.5, height: 207, weight: 2235, stackable: false, description: "Car 2", loadMode: "AUTO" },
-  { id: 8, qty: 24, length: 120, width: 80, height: 85, weight: 650, stackable: true, description: "EUR Pallets", loadMode: "AUTO" },
+  { id: 1, qty: 8, length: 147, width: 115, height: 225, weight: 652.5, stackable: false, description: "Set 1 High" },
+  { id: 2, qty: 2, length: 250, width: 110, height: 145, weight: 927.5, stackable: false, description: "Set 1 Low" },
+  { id: 3, qty: 8, length: 147, width: 115, height: 225, weight: 666.25, stackable: false, description: "Set 2 High" },
+  { id: 4, qty: 2, length: 250, width: 110, height: 145, weight: 935, stackable: false, description: "Set 2 Low" },
+  { id: 5, qty: 10, length: 253, width: 143, height: 225, weight: 2200, stackable: false, description: "Crates" },
+  { id: 6, qty: 1, length: 502, width: 189.5, height: 195.5, weight: 1865, stackable: false, description: "Car 1" },
+  { id: 7, qty: 1, length: 502.2, width: 201.5, height: 207, weight: 2235, stackable: false, description: "Car 2" },
+  { id: 8, qty: 24, length: 120, width: 80, height: 85, weight: 650, stackable: true, description: "EUR Pallets" },
 ];
 
 function rotations(l, w) {
@@ -80,18 +96,34 @@ function fitCountOnPmc(length, width, aircraft) {
 }
 
 function classifyRow(row, aircraft) {
-  const { qty, length: l, width: w, height: h, stackable, loadMode = "AUTO" } = row;
+  const { qty, length: l, width: w, height: h, stackable } = row;
 
-  if (loadMode === "LOWER_SINGLE") {
-    const lowerHeightLimit = 160;
-    const lowerPossible = h <= lowerHeightLimit;
+  if (aircraft.mode === "LOWER_SINGLE_ONLY") {
+    const perLayer = fitCountOnPmc(l, w, aircraft);
+    if (perLayer <= 0) {
+      return {
+        type: "LOWER_SINGLE_ONLY",
+        positions: qty,
+        perPositionMain: 0,
+        perPositionLower: 0,
+        lowerPossible: false,
+        notes: "Footprint does not fit on single Lower Deck PMC",
+      };
+    }
+
+    const layers = stackable && h * 2 <= aircraft.lowerMaxHeight ? 2 : 1;
+    const lowerPossible = h <= aircraft.lowerMaxHeight;
+    const perPositionLower = perLayer * layers;
+
     return {
-      type: "LOWER_SINGLE",
-      positions: qty,
-      perPositionMain: 1,
-      perPositionLower: 1,
+      type: "LOWER_SINGLE_ONLY",
+      positions: Math.ceil(qty / perPositionLower),
+      perPositionMain: 0,
+      perPositionLower,
       lowerPossible,
-      notes: lowerPossible ? "Single Lower Deck PMC (max 160 cm)" : "Too high for Single Lower Deck PMC",
+      notes: lowerPossible
+        ? `${perLayer}/layer, ${layers} layer(s), single lower deck check`
+        : "Too high for single Lower Deck PMC",
     };
   }
 
@@ -100,7 +132,8 @@ function classifyRow(row, aircraft) {
     return {
       type: "T",
       positions: qty * tNeeded,
-      perPosition: 1,
+      perPositionMain: 1,
+      perPositionLower: 0,
       lowerPossible: false,
       notes: "20-ft / T-position cargo",
     };
@@ -111,42 +144,38 @@ function classifyRow(row, aircraft) {
     return {
       type: "BRIDGE",
       positions: qty * 2,
-      perPosition: 1,
+      perPositionMain: 1,
+      perPositionLower: 0,
       lowerPossible: false,
       notes: "Bridge load / footprint issue",
     };
   }
 
-  const layersQ7 = stackable && h * 2 <= aircraft.q7MaxHeight ? 2 : 1;
+  const mainLayers = stackable && h * 2 <= aircraft.q7MaxHeight ? 2 : 1;
   const lowerPossible = h <= aircraft.lowerMaxHeight;
   const lowerLayers = stackable && h * 2 <= aircraft.lowerMaxHeight ? 2 : 1;
 
   let type = h <= aircraft.q6MaxHeight ? "Q6" : "Q7";
   if (h > aircraft.q7MaxHeight) type = "OOG";
 
-  const perPositionMain = perLayer * layersQ7;
-  const perPositionLower = perLayer * lowerLayers;
-
   return {
     type,
-    positions: Math.ceil(qty / perPositionMain),
-    perPositionMain,
-    perPositionLower,
+    positions: Math.ceil(qty / (perLayer * mainLayers)),
+    perPositionMain: perLayer * mainLayers,
+    perPositionLower: perLayer * lowerLayers,
     lowerPossible,
-    notes: `${perLayer}/layer, main ${layersQ7} layer(s)`,
+    notes: `${perLayer}/layer, main ${mainLayers} layer(s)`,
   };
 }
 
 function allocateRows(rows, aircraft) {
-  const details = rows.map((row) => {
-    const calc = classifyRow(row, aircraft);
-    return {
-      row,
-      ...calc,
-      allocation: { q7: 0, q6: 0, t: 0, lower: 0 },
-      totalWeight: row.qty * row.weight,
-    };
-  });
+  const details = rows.map((row) => ({
+    row,
+    ...classifyRow(row, aircraft),
+    allocation: { q7: 0, q6: 0, t: 0, lower: 0 },
+    totalWeight: row.qty * row.weight,
+    unallocatedQty: 0,
+  }));
 
   let freeQ7 = aircraft.q7;
   let freeQ6 = aircraft.q6;
@@ -156,29 +185,47 @@ function allocateRows(rows, aircraft) {
 
   for (const item of details) totalWeight += item.totalWeight;
 
-  // Forced single lower deck PMC first
-  for (const item of details.filter((d) => d.type === "LOWER_SINGLE")) {
-    const use = item.lowerPossible ? Math.min(item.positions, freeLower) : 0;
-    item.allocation.lower = use;
-    freeLower -= use;
-    item.unallocatedQty = item.lowerPossible ? Math.max(0, item.row.qty - use) : item.row.qty;
+  if (aircraft.mode === "LOWER_SINGLE_ONLY") {
+    for (const item of details) {
+      const use = item.lowerPossible ? Math.min(item.positions, freeLower) : 0;
+      item.allocation.lower = use;
+      freeLower -= use;
+      const perLower = item.perPositionLower || 1;
+      item.unallocatedQty = item.lowerPossible ? Math.max(0, item.row.qty - use * perLower) : item.row.qty;
+    }
+
+    const usedLower = aircraft.lowerPmc - freeLower;
+    const unallocated = details.reduce((sum, d) => sum + (d.unallocatedQty || 0), 0);
+
+    return {
+      details,
+      totalWeight,
+      usedQ7: 0,
+      usedQ6: 0,
+      usedT: 0,
+      usedLower,
+      freeQ7: 0,
+      freeQ6: 0,
+      freeT: 0,
+      freeLower,
+      freeLd3: 0,
+      fits: unallocated === 0 && freeLower >= 0,
+      unallocated,
+    };
   }
 
-  // T first
   for (const item of details.filter((d) => d.type === "T")) {
     const use = Math.min(item.positions, freeT);
     item.allocation.t = use;
     freeT -= use;
   }
 
-  // Q7 cargo
   for (const item of details.filter((d) => d.type === "Q7" || d.type === "OOG" || d.type === "BRIDGE")) {
     const use = Math.min(item.positions, freeQ7);
     item.allocation.q7 = use;
     freeQ7 -= use;
   }
 
-  // Q6 cargo: first Q6 positions, then lower deck if possible, then Q7 fallback
   for (const item of details.filter((d) => d.type === "Q6")) {
     let remainingQty = item.row.qty;
     const q6PerPos = item.perPositionMain;
@@ -282,7 +329,7 @@ export default function App() {
   function addRow() {
     setRows((prev) => [
       ...prev,
-      { id: Date.now(), qty: 1, length: 120, width: 80, height: 80, weight: 100, stackable: false, description: "New Cargo", loadMode: "AUTO" },
+      { id: Date.now(), qty: 1, length: 120, width: 80, height: 80, weight: 100, stackable: false, description: "New Cargo" },
     ]);
   }
 
@@ -333,7 +380,11 @@ export default function App() {
             </div>
           }
         >
-          <div style={{ color: "#475569", fontSize: 14 }}>Web-App für Q7 / Q6 / T / Lower Deck Planung auf der 747-400F.</div>
+          <div style={{ color: "#475569", fontSize: 14 }}>
+            {aircraft.mode === "LOWER_SINGLE_ONLY"
+              ? "Single Lower Deck PMC check with max height 160 cm."
+              : "Web-App für Q7 / Q6 / T / Lower Deck Planung auf der 747-400F."}
+          </div>
         </SectionCard>
 
         <div style={{ display: "grid", gridTemplateColumns: "1.35fr 0.65fr", gap: 20 }}>
@@ -342,7 +393,7 @@ export default function App() {
               <table style={{ width: "100%", borderCollapse: "collapse" }}>
                 <thead>
                   <tr style={{ background: "#f1f5f9" }}>
-                    {["Qty", "L", "W", "H", "KG", "Stackable", "Mode", "Description", ""].map((h) => (
+                    {["Qty", "L", "W", "H", "KG", "Stackable", "Description", ""].map((h) => (
                       <th key={h} style={{ textAlign: "left", padding: 10, fontSize: 13, borderBottom: "1px solid #e5e7eb" }}>{h}</th>
                     ))}
                   </tr>
@@ -368,16 +419,6 @@ export default function App() {
                       ))}
                       <td style={{ padding: 8, borderBottom: "1px solid #f1f5f9" }}>
                         <input type="checkbox" checked={row.stackable} onChange={(e) => updateRow(row.id, "stackable", e.target.checked)} />
-                      </td>
-                      <td style={{ padding: 8, borderBottom: "1px solid #f1f5f9" }}>
-                        <select
-                          value={row.loadMode || "AUTO"}
-                          onChange={(e) => updateRow(row.id, "loadMode", e.target.value)}
-                          style={{ width: "100%", padding: 8, borderRadius: 8, border: "1px solid #cbd5e1" }}
-                        >
-                          <option value="AUTO">Auto</option>
-                          <option value="LOWER_SINGLE">Single Lower Deck PMC (max 160 cm)</option>
-                        </select>
                       </td>
                       <td style={{ padding: 8, borderBottom: "1px solid #f1f5f9" }}>
                         <input
@@ -419,7 +460,7 @@ export default function App() {
                   <div key={item.row.id} style={{ border: "1px solid #e5e7eb", borderRadius: 14, padding: 12 }}>
                     <div style={{ fontWeight: 700 }}>{item.row.description}</div>
                     <div style={{ fontSize: 13, color: "#475569", marginTop: 4 }}>
-                      {item.row.qty} pcs · {item.row.length}×{item.row.width}×{item.row.height} cm · {item.row.weight} kg/pc · mode: {item.row.loadMode || "AUTO"}
+                      {item.row.qty} pcs · {item.row.length}×{item.row.width}×{item.row.height} cm · {item.row.weight} kg/pc
                     </div>
                     <div style={{ marginTop: 8, display: "flex", flexWrap: "wrap", gap: 8, fontSize: 12 }}>
                       <span style={{ padding: "6px 10px", background: "#eff6ff", borderRadius: 999 }}>{item.type}</span>
@@ -437,26 +478,41 @@ export default function App() {
           </div>
         </div>
 
-        <SectionCard title="Main Deck Q6 (A1 / A2 / B1 included)">
-          {renderDeck(q6Labels, result.usedQ6, "#fde68a", 4)}
-        </SectionCard>
+        {aircraft.mode === "FULL" && (
+          <>
+            <SectionCard title="Main Deck Q6 (A1 / A2 / B1 included)">
+              {renderDeck(q6Labels, result.usedQ6, "#fde68a", 4)}
+            </SectionCard>
 
-        <SectionCard title="Main Deck Q7">
-          {renderDeck(q7Labels, result.usedQ7, "#bfdbfe", 6)}
-        </SectionCard>
+            <SectionCard title="Main Deck Q7">
+              {renderDeck(q7Labels, result.usedQ7, "#bfdbfe", 6)}
+            </SectionCard>
 
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
-          <SectionCard title="T Positions">
-            {renderDeck(tLabels, result.usedT, "#fecaca", 2)}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20 }}>
+              <SectionCard title="T Positions">
+                {renderDeck(tLabels, result.usedT, "#fecaca", 2)}
+              </SectionCard>
+              <SectionCard title="Lower Deck PMC">
+                {renderDeck(lowerLabels, result.usedLower, "#ddd6fe", 3)}
+              </SectionCard>
+            </div>
+
+            <SectionCard title="LD3">
+              {renderDeck(ld3Labels, 0, "#e2e8f0", 2)}
+            </SectionCard>
+          </>
+        )}
+
+        {aircraft.mode === "LOWER_SINGLE_ONLY" && (
+          <SectionCard title="Single Lower Deck PMC Check">
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(1, minmax(0, 220px))", gap: 12 }}>
+              <div style={cellStyle(result.usedLower > 0 ? "#ddd6fe" : "#ecfdf5")}>Lower Deck PMC 1</div>
+            </div>
+            <div style={{ marginTop: 14, fontSize: 14, color: "#475569" }}>
+              Max height: 160 cm · one lower deck PMC only.
+            </div>
           </SectionCard>
-          <SectionCard title="Lower Deck PMC">
-            {renderDeck(lowerLabels, result.usedLower, "#ddd6fe", 3)}
-          </SectionCard>
-        </div>
-
-        <SectionCard title="LD3">
-          {renderDeck(ld3Labels, 0, "#e2e8f0", 2)}
-        </SectionCard>
+        )}
       </div>
     </div>
   );
