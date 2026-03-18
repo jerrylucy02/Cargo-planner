@@ -396,7 +396,7 @@ function SectionCard({ title, children, right }) {
   );
 }
 
-function LowerSinglePreview({ row, result, aircraft }) {
+function LowerSinglePreview({ row, result, aircraft, previewMode, setPreviewMode }) {
   const firstItem = result.details[0];
   const previewRow = firstItem?.row || row;
   const layout = previewRow ? fitLayoutOnPmc(previewRow.length, previewRow.width, aircraft) : { count: 0, boxes: [] };
@@ -427,55 +427,24 @@ function LowerSinglePreview({ row, result, aircraft }) {
 
     return (
       <div key={`cube-${layerIndex}-${idx}`} style={{ position: "absolute", left, top, width: baseWidth, height: baseHeight }}>
-        <div
-          style={{
-            position: "absolute",
-            inset: 0,
-            background: frontColor,
-            border: `2px solid ${borderColor}`,
-            borderRadius: 8,
-            boxSizing: "border-box",
-            display: "flex",
-            alignItems: "center",
-            justifyContent: "center",
-            fontSize: 10,
-            fontWeight: 700,
-            color: "#0f172a",
-            boxShadow: "0 6px 10px rgba(15,23,42,0.10)",
-          }}
-        >
-          {idx + 1}
-        </div>
-        <div
-          style={{
-            position: "absolute",
-            left: 8,
-            top: -8,
-            width: "100%",
-            height: 12,
-            background: topColor,
-            border: `2px solid ${borderColor}`,
-            borderBottom: "none",
-            transform: "skewX(-45deg)",
-            transformOrigin: "left bottom",
-            boxSizing: "border-box",
-          }}
-        />
-        <div
-          style={{
-            position: "absolute",
-            right: -8,
-            top: -4,
-            width: 12,
-            height: "100%",
-            background: sideColor,
-            border: `2px solid ${borderColor}`,
-            borderLeft: "none",
-            transform: "skewY(-45deg)",
-            transformOrigin: "left top",
-            boxSizing: "border-box",
-          }}
-        />
+        <div style={{ position: "absolute", inset: 0, background: frontColor, border: `2px solid ${borderColor}`, borderRadius: 8, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#0f172a", boxShadow: "0 6px 10px rgba(15,23,42,0.10)" }}>{idx + 1}</div>
+        <div style={{ position: "absolute", left: 8, top: -8, width: "100%", height: 12, background: topColor, border: `2px solid ${borderColor}`, borderBottom: "none", transform: "skewX(-45deg)", transformOrigin: "left bottom", boxSizing: "border-box" }} />
+        <div style={{ position: "absolute", right: -8, top: -4, width: 12, height: "100%", background: sideColor, border: `2px solid ${borderColor}`, borderLeft: "none", transform: "skewY(-45deg)", transformOrigin: "left top", boxSizing: "border-box" }} />
+      </div>
+    );
+  };
+
+  const renderTopBox = (box, idx, layerIndex) => {
+    const left = (box.x / aircraft.pmcLength) * 100;
+    const top = (box.y / aircraft.pmcWidth) * 100;
+    const width = (box.l / aircraft.pmcLength) * 100;
+    const height = (box.w / aircraft.pmcWidth) * 100;
+    const ok = firstItem?.lowerPossible;
+    const bg = ok ? (layerIndex === 1 ? "rgba(167,139,250,0.45)" : "rgba(96,165,250,0.40)") : "rgba(248,113,113,0.35)";
+    const border = ok ? (layerIndex === 1 ? "#7c3aed" : "#2563eb") : "#dc2626";
+    return (
+      <div key={`top-${layerIndex}-${idx}`} style={{ position: "absolute", left: `${left}%`, top: `${top}%`, width: `${width}%`, height: `${height}%`, background: bg, border: `2px solid ${border}`, borderRadius: 8, boxSizing: "border-box", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700, color: "#0f172a" }}>
+        {layerIndex === 1 ? idx + 1 : `L2-${idx + 1}`}
       </div>
     );
   };
@@ -484,27 +453,28 @@ function LowerSinglePreview({ row, result, aircraft }) {
     <SectionCard title="Single Lower Deck PMC Check">
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, alignItems: "start" }}>
         <div>
-          <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8, color: "#334155" }}>3D stack preview</div>
-          <div style={{ position: "relative", width: 420, maxWidth: "100%", height: layers > 1 ? 330 : 250 }}>
-            <div
-              style={{
-                position: "absolute",
-                left: 20,
-                bottom: 10,
-                width: 340,
-                height: 170,
-                border: "2px dashed #94a3b8",
-                borderRadius: 16,
-                background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)",
-                zIndex: 0,
-              }}
-            />
-            <div style={{ position: "absolute", left: 28, bottom: 186, fontSize: 12, color: "#475569", fontWeight: 700 }}>
-              PMC {aircraft.pmcLength} × {aircraft.pmcWidth}
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: "#334155" }}>{previewMode === "TOP" ? "Top view" : "3D stack preview"}</div>
+            <div style={{ display: "inline-flex", border: "1px solid #cbd5e1", borderRadius: 10, overflow: "hidden" }}>
+              <button onClick={() => setPreviewMode("TOP")} style={{ padding: "6px 10px", border: 0, background: previewMode === "TOP" ? "#2563eb" : "white", color: previewMode === "TOP" ? "white" : "#0f172a", cursor: "pointer" }}>Top</button>
+              <button onClick={() => setPreviewMode("3D")} style={{ padding: "6px 10px", border: 0, background: previewMode === "3D" ? "#2563eb" : "white", color: previewMode === "3D" ? "white" : "#0f172a", cursor: "pointer" }}>3D</button>
             </div>
-            {layer1Boxes.map((box, idx) => renderCube(box, idx, 1))}
-            {layers > 1 && layer2Boxes.map((box, idx) => renderCube(box, idx, 2))}
           </div>
+
+          {previewMode === "TOP" ? (
+            <div style={{ width: 360, maxWidth: "100%", aspectRatio: `${aircraft.pmcLength} / ${aircraft.pmcWidth}`, border: "2px dashed #94a3b8", borderRadius: 16, background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)", position: "relative", overflow: "hidden" }}>
+              <div style={{ position: "absolute", left: 10, top: 8, fontSize: 12, color: "#475569", fontWeight: 700 }}>PMC {aircraft.pmcLength} × {aircraft.pmcWidth}</div>
+              {layer1Boxes.map((box, idx) => renderTopBox(box, idx, 1))}
+              {layers > 1 && layer2Boxes.map((box, idx) => renderTopBox(box, idx, 2))}
+            </div>
+          ) : (
+            <div style={{ position: "relative", width: 420, maxWidth: "100%", height: layers > 1 ? 330 : 250 }}>
+              <div style={{ position: "absolute", left: 20, bottom: 10, width: 340, height: 170, border: "2px dashed #94a3b8", borderRadius: 16, background: "linear-gradient(135deg, #f8fafc 0%, #eef2ff 100%)", zIndex: 0 }} />
+              <div style={{ position: "absolute", left: 28, bottom: 186, fontSize: 12, color: "#475569", fontWeight: 700 }}>PMC {aircraft.pmcLength} × {aircraft.pmcWidth}</div>
+              {layer1Boxes.map((box, idx) => renderCube(box, idx, 1))}
+              {layers > 1 && layer2Boxes.map((box, idx) => renderCube(box, idx, 2))}
+            </div>
+          )}
         </div>
         <div>
           <div style={{ display: "grid", gridTemplateColumns: "repeat(1, minmax(0, 220px))", gap: 12 }}>
@@ -513,22 +483,15 @@ function LowerSinglePreview({ row, result, aircraft }) {
           <div style={{ marginTop: 18, display: "grid", gap: 8, fontSize: 14, color: "#475569" }}>
             <div>Items on layer 1: {layer1Count}</div>
             <div>Items on layer 2: {layer2Count}</div>
-            <div>3D boxes shown: {layer1Count + layer2Count}</div>
             <div>Possible per layer: {perLayer}</div>
             <div>Layers used: {layers}</div>
             <div>Total possible with current stacking: {perLayer * layers}</div>
             <div>Max height: {aircraft.lowerMaxHeight} cm</div>
             <div>Max weight: {aircraft.maxWeight} kg</div>
-            {firstItem && !previewRow.stackable && <div>Second layer only activates when Stackable is checked.</div>}
-            {firstItem && firstItem.heightOk === false && (
-              <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: height exceeds limit.</div>
-            )}
-            {firstItem && firstItem.weightOk === false && (
-              <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: weight exceeds limit.</div>
-            )}
-            {firstItem && firstItem.lowerPossible && (
-              <div style={{ color: "#166534", fontWeight: 700 }}>Fits into the single lower deck PMC.</div>
-            )}
+            {firstItem && !previewRow?.stackable && <div>Second layer only activates when Stackable is checked.</div>}
+            {firstItem && firstItem.heightOk === false && <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: height exceeds limit.</div>}
+            {firstItem && firstItem.weightOk === false && <div style={{ color: "#b91c1c", fontWeight: 700 }}>Red warning: weight exceeds limit.</div>}
+            {firstItem && firstItem.lowerPossible && <div style={{ color: "#166534", fontWeight: 700 }}>Fits into the single lower deck PMC.</div>}
           </div>
         </div>
       </div>
@@ -537,6 +500,7 @@ function LowerSinglePreview({ row, result, aircraft }) {
 }
 
 export default function App() {
+  const [previewMode, setPreviewMode] = useState("TOP");
   const [aircraftName, setAircraftName] = useState("B747-400F");
   const [rows, setRows] = useState(sampleRows);
 
@@ -733,7 +697,7 @@ export default function App() {
         )}
 
         {aircraft.mode === "LOWER_SINGLE_ONLY" && (
-          <LowerSinglePreview row={rows[0]} result={result} aircraft={aircraft} />
+          <LowerSinglePreview row={rows[0]} result={result} aircraft={aircraft} previewMode={previewMode} setPreviewMode={setPreviewMode} />
         )}
       </div>
     </div>
